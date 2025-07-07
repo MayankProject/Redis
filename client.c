@@ -1,4 +1,5 @@
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <netinet/in.h>
 #include <string.h>
@@ -46,21 +47,26 @@ int read_n_bytes(int fd, char *buf, int n) {
     return 0;
 }
 
-int read_full(int client_fd, char *buf) {
+int read_full(int client_fd, char *status, char *buf) {
     int ret;
-    char total_len[sizeof(int)];
-    int len;
-    ret = read_n_bytes(client_fd, total_len, sizeof(int));
+    uint32_t len;
+
+    // TOTAL RES LEN
+    ret = read_n_bytes(client_fd, (char*) &len, sizeof(uint32_t));
     if( ret == -1 ) die("read_n_bytes");
-    memcpy(&len, total_len, sizeof(int));
+
+    // STATUS
+    read_n_bytes(client_fd, (char*) &status, sizeof(uint32_t));
+    len -= sizeof(uint32_t);
 
     if(len > MAXLEN) {
-        len = MAXLEN;
+        die("Request too long\n");
     }
 
     ret = read_n_bytes(client_fd, buf, len);
-    buf[len] = '\0';
     if( ret == -1 ) die("read_n_bytes");
+
+    buf[len] = '\0';
     return 0;
 }
 
@@ -69,10 +75,29 @@ void* handle_read_thread(void* raw_fd) {
     int client_fd = *(int*) raw_fd;
     while(1) {
         char *buf = malloc(MAXLEN);
-        read_full(client_fd, buf);
+        int status = 0;
+        read_full(client_fd, (char *) &status, buf);
+        printf("status: %i\n", status);
         printf("message from server: %s\n", buf);
     }
     printf("thread exited\n");
+}
+
+int make_request(char **params, int params_len, char *request, int *request_len) {
+    memcpy(request, &params_len, sizeof(uint32_t));
+    *request_len += sizeof(uint32_t);
+
+    for (int i = 0; i < params_len; i++) {
+        char *param = params[i];
+
+        int len = strlen(param);
+        memcpy(request + *request_len, &len, sizeof(len));
+        *request_len += sizeof(len);
+
+        memcpy(request + *request_len, param, len);
+        *request_len += len;
+    }
+    return 1;
 }
 
 int main() {
@@ -86,24 +111,42 @@ int main() {
     ret = connect(sockfd, (struct sockaddr *) &addr, sizeof(addr));
     if( ret == -1 ) die("connect");
 
+    #define total_params 3
+    char* params1[total_params] = {"set", "name", "mayank"};
+    char* params2[total_params-1] = {"get", "name"};
+    char* request;
+    int request_len;
 
-    char *query_list[5];
-    query_list[0] = malloc(MAXLEN);
-    query_list[1] = strdup("hello2");
-    query_list[2] = strdup("hello3");
-    query_list[3] = strdup("hello4");
-    query_list[4] = strdup("hello5");
-    if (!query_list[0]) {
-        perror("malloc failed");
-        exit(1);
-    }
-    memset(query_list[0], 'z', MAXLEN);
-    query_list[0][MAXLEN - 1] = '\0';
-    
-    for (int i = 0; i < 5; i++) {
-        write_full(sockfd, query_list[i], strlen(query_list[i]));
-        free(query_list[i]);
-    }
+    request_len = 0;
+    request = malloc(1024);
+    make_request(params1, total_params, request, &request_len);
+    write_full(sockfd, request, request_len);
+    free(request);
+
+    request_len = 0;
+    request = malloc(1024);
+    make_request(params2, total_params-1, request, &request_len);
+    write_full(sockfd, request, request_len);
+    free(request);
+
+    // char *query_list[5];
+    // query_list[0] = malloc(MAXLEN);
+    // query_list[1] = strdup("hello2");
+    // query_list[2] = strdup("hello3");
+    // query_list[3] = strdup("hello4");
+    // query_list[4] = strdup("hello5");
+    // if (!query_list[0]) {
+    //     perror("malloc failed");
+    //     exit(1);
+    // }
+    // memset(query_list[0], 'z', MAXLEN);
+    // query_list[0][MAXLEN - 1] = '\0';
+
+    // for (int i = 1; i < 5; i++) {
+    //     write_full(sockfd, query_list[i], strlen(query_list[i]));
+    //     free(query_list[i]);
+    // }
+
 
     pthread_t thread;
     pthread_create(&thread, NULL, handle_read_thread, &sockfd);  

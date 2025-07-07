@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "include/uthash.h"
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
@@ -25,6 +26,12 @@ typedef struct Conn{
     bool want_close;
 } Conn;
 
+typedef struct {
+    char *key;
+    char *val;
+    UT_hash_handle hh;
+} KV;
+
 typedef struct serverState{
     Conn** fd2Conn;
     int home_fd;
@@ -32,13 +39,26 @@ typedef struct serverState{
     int pollArgsLen;
     int maxFd;
     int fds;
+    KV *store;
 } serverState;
+
+typedef enum Response_status {
+    RES_OK = 0,
+    RES_ERROR,
+    RES_KEY_NOT_FOUND
+} Response_status;
+
+typedef struct Response {
+    Response_status status;
+    char *message;
+} Response;
 
 serverState State;
 
 void init(){
     State.fds = 0;
     State.home_fd = -1;
+    State.store = NULL;
     State.fd2Conn = NULL;
     State.fds_polling_arg = NULL;
     State.pollArgsLen = 0;
@@ -47,6 +67,41 @@ void init(){
 void die(const char *msg){
     perror(msg);
     exit(1);
+}
+
+// KEY VALUE STORE
+//
+void set_kv(const char *k, const char *v) {
+    KV *s;
+    HASH_FIND_STR(State.store, k, s);
+    if (!s) {
+        s = malloc(sizeof(KV));
+        s->val = NULL;
+        s->key = strdup(k);
+        HASH_ADD_KEYPTR(hh, State.store, s->key, strlen(s->key), s);
+    }
+    free(s->val); // free old value
+    s->val = strdup(v); // set new value
+}
+
+char *get_kv(const char *k) {
+    KV *s;
+    HASH_FIND_STR(State.store, k, s);
+    if (s) return s->val;
+    return NULL;
+}
+
+int del_kv(const char *k) {
+    KV *s;
+    HASH_FIND_STR(State.store, k, s);
+    if (s) {
+        HASH_DEL(State.store, s);
+        free(s->key);
+        free(s->val);
+        free(s);
+        return 1;
+    }
+    return 0;
 }
 
 static void fd_set_nb(int fd) {
@@ -66,15 +121,95 @@ static void fd_set_nb(int fd) {
     }
 }
 
-void feed_outgoing(Conn *conn, char **msg, int n){
+int read_32bit(uint32_t *n, char *buf) {
+    memcpy(n, buf, sizeof(uint32_t));
+    return sizeof(uint32_t);
+}
+
+void feed_outgoing(Conn *conn, char *msg, int n){
     int total_bytes = sizeof(uint32_t) + n;
     if (conn->outgoing_len + total_bytes > OUTGOING_SIZE) {
         printf("Buffer overflow\n");
         return;
     }
     memcpy(conn->outgoing + conn->outgoing_len, &n, sizeof(uint32_t));
-    memcpy(conn->outgoing + sizeof(uint32_t) + conn->outgoing_len, *msg, n);
+    memcpy(conn->outgoing + sizeof(uint32_t) + conn->outgoing_len, msg, n);
     conn->outgoing_len += total_bytes;
+}
+int deserialize_params(uint32_t len, char **request, int *params_len, char ***params) {
+    // this will be incremented
+    int total_bytes = 0;
+
+    char *ptr = *request;
+    uint32_t n;
+    if (len <= total_bytes + sizeof(uint32_t) ) {
+        return 0;
+    }
+    ptr += read_32bit(&n, ptr);
+    total_bytes += sizeof(uint32_t);
+    *params_len = n;
+    *params = malloc(n * sizeof(char*));
+
+    for (uint32_t i = 0; i < n; i++) {
+        if (len <= total_bytes + sizeof(uint32_t)) {
+            return 0;
+        }
+        uint32_t param_len;
+        ptr += read_32bit(&param_len, ptr);
+        total_bytes += sizeof(uint32_t);
+        if (len < total_bytes + param_len) {
+            return 0;
+        }
+        char *param = malloc(param_len + 1);
+        memcpy(param, ptr, param_len);
+        param[param_len] = '\0';
+        (*params)[i] = param;
+        ptr += param_len;
+        total_bytes += param_len;
+    }
+    return 1;
+}
+
+int perform_request(int params_len, char **params, Response *response){
+    if ( params_len == 3 && strcmp(params[0], "set") == 0) {
+        set_kv(params[1], params[2]);
+        response->status = RES_OK;
+        response->message = strdup("OK");
+        return 1;
+    }
+    else if ( params_len == 2 && strcmp(params[0], "get") == 0) {
+        char *val = get_kv(params[1]);
+        if (val != NULL) {
+            response->status = RES_OK;
+            response->message = strdup(val);
+            return 1;
+        } 
+        response->status = RES_KEY_NOT_FOUND;
+        response->message = strdup("Key not found");
+        return 1;
+    }
+    else if ( params_len == 2 && strcmp(params[0], "del") == 0) {
+        if (del_kv(params[1])) {
+            response->status = RES_OK;
+            response->message = strdup("OK");
+            return 1;
+        }
+        response->status = RES_KEY_NOT_FOUND;
+        response->message = strdup("Key not found");
+        return 1;
+    }
+    response->status = RES_ERROR;
+    response->message = strdup("Unknown command");
+    return 0;
+}
+
+int feed_response(Conn *conn, Response *response){
+    int total_bytes = sizeof(uint32_t) + strlen(response->message);
+    char *resp = malloc(total_bytes);
+    memcpy(resp, &response->status, sizeof(uint32_t));
+    memcpy(resp + sizeof(uint32_t), response->message, strlen(response->message));
+    feed_outgoing(conn, resp, total_bytes);
+    return 1;
 }
 
 bool parse_one_request(Conn *conn){
@@ -83,7 +218,7 @@ bool parse_one_request(Conn *conn){
     if (conn->incoming_len <= sizeof(uint32_t)) {
         return false;
     }
-    memcpy(&len, conn->incoming, sizeof(uint32_t));
+    read_32bit(&len, conn->incoming);
     if (len > MAXLEN) {
         printf("Request too long\n");
         conn->want_close = true;
@@ -97,15 +232,26 @@ bool parse_one_request(Conn *conn){
     }
 
     // getting the request
-    char *request = strdup(&conn->incoming[sizeof(uint32_t)]);
-    request[len] = '\0';
+    char *request = malloc(len);
+    memcpy(request, &conn->incoming[sizeof(uint32_t)], len);
     int total_len = len + sizeof(uint32_t);
-    memmove(conn->incoming, conn->incoming + total_len, conn->incoming_len - total_len);
-    conn->incoming_len -= total_len;
-    printf("message from client: %s\n", request);
+
+    char **params = NULL;
+    int params_len = 0;
+    if(!deserialize_params(len, &request, &params_len, &params)){
+        printf("somethinq went wrong\n");
+        return false;
+    }
+    Response *response = malloc(sizeof(Response));
+    perform_request(params_len, params, response);
 
     // wrting the response to client's connection's outgoing buffer
-    feed_outgoing(conn, &request, strlen(request));
+    feed_response(conn, response);
+
+    // flushing the current request from incoming buffer
+    memmove(conn->incoming, conn->incoming + total_len, conn->incoming_len - total_len);
+    conn->incoming_len -= total_len;
+
     free(request);
     return true;
 }
@@ -160,7 +306,7 @@ void handle_write(Conn *conn){
     conn->outgoing_len -= rv;
 }
 
-void process_request(Conn *conn){
+void process_requests(Conn *conn){
     while(parse_one_request(conn)); // pipeline
     if (conn->outgoing_len > 0) {
         conn->want_read = false;
@@ -186,7 +332,7 @@ void handle_read(Conn *conn){
     }
     conn->incoming_len += rv;
     conn->incoming[conn->incoming_len] = '\0';
-    process_request(conn);
+    process_requests(conn);
 }
 
 
