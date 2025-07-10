@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -O2
 
 TARGETS = server client
 
-SERVER_SRC = server.c
+SERVER_SRC = server.c hashmap.c
 CLIENT_SRC = client.c
 
 .PHONY: all clean

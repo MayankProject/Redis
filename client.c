@@ -113,7 +113,8 @@ int main() {
 
     #define total_params 3
     char* params1[total_params] = {"set", "name", "mayank"};
-    char* params2[total_params-1] = {"get", "name"};
+    char* params2[total_params-1] = {"del", "name"};
+    char* params3[total_params-1] = {"get", "name"};
     char* request;
     int request_len;
 
@@ -129,25 +130,13 @@ int main() {
     write_full(sockfd, request, request_len);
     free(request);
 
-    // char *query_list[5];
-    // query_list[0] = malloc(MAXLEN);
-    // query_list[1] = strdup("hello2");
-    // query_list[2] = strdup("hello3");
-    // query_list[3] = strdup("hello4");
-    // query_list[4] = strdup("hello5");
-    // if (!query_list[0]) {
-    //     perror("malloc failed");
-    //     exit(1);
-    // }
-    // memset(query_list[0], 'z', MAXLEN);
-    // query_list[0][MAXLEN - 1] = '\0';
 
-    // for (int i = 1; i < 5; i++) {
-    //     write_full(sockfd, query_list[i], strlen(query_list[i]));
-    //     free(query_list[i]);
-    // }
-
-
+    request_len = 0;
+    request = malloc(1024);
+    make_request(params3, total_params-1, request, &request_len);
+    write_full(sockfd, request, request_len);
+    free(request);
+    
     pthread_t thread;
     pthread_create(&thread, NULL, handle_read_thread, &sockfd);  
     while(1){

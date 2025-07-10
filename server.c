@@ -1,5 +1,5 @@
+#include "hashmap.h"
 #include <stdint.h>
-#include "include/uthash.h"
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
@@ -11,10 +11,12 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 #define PORT 8090
 #define MAXLEN (32 << 20)
 #define INCOMING_SIZE (MAXLEN + sizeof(uint32_t))
 #define OUTGOING_SIZE (INCOMING_SIZE + 100)
+
 typedef struct Conn{
     int fd;
     char *incoming;
@@ -26,12 +28,6 @@ typedef struct Conn{
     bool want_close;
 } Conn;
 
-typedef struct {
-    char *key;
-    char *val;
-    UT_hash_handle hh;
-} KV;
-
 typedef struct serverState{
     Conn** fd2Conn;
     int home_fd;
@@ -39,7 +35,7 @@ typedef struct serverState{
     int pollArgsLen;
     int maxFd;
     int fds;
-    KV *store;
+    HMap *HashDB;
 } serverState;
 
 typedef enum Response_status {
@@ -58,10 +54,10 @@ serverState State;
 void init(){
     State.fds = 0;
     State.home_fd = -1;
-    State.store = NULL;
     State.fd2Conn = NULL;
     State.fds_polling_arg = NULL;
     State.pollArgsLen = 0;
+    State.HashDB = init_hashmap();
 }
 
 void die(const char *msg){
@@ -70,38 +66,57 @@ void die(const char *msg){
 }
 
 // KEY VALUE STORE
-//
-void set_kv(const char *k, const char *v) {
-    KV *s;
-    HASH_FIND_STR(State.store, k, s);
-    if (!s) {
-        s = malloc(sizeof(KV));
-        s->val = NULL;
-        s->key = strdup(k);
-        HASH_ADD_KEYPTR(hh, State.store, s->key, strlen(s->key), s);
+void set_kv(const char *key, const char *value) {
+    Entry *e = h_lookup(State.HashDB, key, 0);
+
+    // If entry is already in the hashmap modify
+    if ( e != NULL) {
+        free(e->value);
+        e->value = strdup(value);
     }
-    free(s->val); // free old value
-    s->val = strdup(v); // set new value
+
+    Entry *entry = malloc(sizeof(Entry));
+    entry->key = strdup(key);
+    entry->value = strdup(value);
+    insert_entry(entry, State.HashDB);
+
+    float load_factor = current_load_factor(State.HashDB);
+    State.HashDB->newer->load_factor = load_factor;
+
+    if (load_factor > MAX_LOAD_FACTOR) {
+        printf("Triggering resize\n");
+        trigger_resize(State.HashDB);
+    }
+    State.HashDB->entries++;
 }
 
 char *get_kv(const char *k) {
-    KV *s;
-    HASH_FIND_STR(State.store, k, s);
-    if (s) return s->val;
+    Entry *e = h_lookup(State.HashDB, k, 0);
+    if (e) return e->value;
     return NULL;
 }
 
-int del_kv(const char *k) {
-    KV *s;
-    HASH_FIND_STR(State.store, k, s);
-    if (s) {
-        HASH_DEL(State.store, s);
-        free(s->key);
-        free(s->val);
-        free(s);
-        return 1;
+int del_kv(const char *key) {
+    const uint64_t hash = str_hash((uint8_t*)key, strlen(key));
+
+    HTab *db = State.HashDB->newer;
+    Entry *e = htab_lookup(db, key, hash);
+
+    if (State.HashDB->older && e == NULL) {
+        db = State.HashDB->older;
+        e = htab_lookup(db, key, hash);
     }
-    return 0;
+
+    if (e == NULL) {
+        printf("Entry not found\n");
+        return 0;
+    }
+    detach_node(&e->node, db);
+    free(e->key);
+    free(e->value);
+    free(e);
+    State.HashDB->entries--;
+    return 1;
 }
 
 static void fd_set_nb(int fd) {
@@ -171,6 +186,7 @@ int deserialize_params(uint32_t len, char **request, int *params_len, char ***pa
 }
 
 int perform_request(int params_len, char **params, Response *response){
+    h_rehash(State.HashDB);
     if ( params_len == 3 && strcmp(params[0], "set") == 0) {
         set_kv(params[1], params[2]);
         response->status = RES_OK;
