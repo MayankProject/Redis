@@ -21,7 +21,7 @@ typedef struct Entry {
 typedef struct HTab {
     // size - 1
     int mask;
-    int load_factor;
+    float load_factor;
     int size;
     // total size of the hashmap ( 2^n )
     int total_size;
@@ -67,6 +67,8 @@ Entry *htab_lookup(HTab *db, const char *key, uint64_t hash);
 
 // Looks up an entry in the hashmap
 Entry *h_lookup(HMap *HashDB, const char *key, uint64_t hash);
+
+char **all_keys(HMap *HashDB);
 
 // Node*, HTab* -> detaches node from the table
 int detach_node(HNode *node, HTab *db);

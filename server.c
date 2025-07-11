@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #define PORT 8090
+#define res_arr_element_len 100 
 #define MAXLEN (32 << 20)
 #define INCOMING_SIZE (MAXLEN + sizeof(uint32_t))
 #define OUTGOING_SIZE (INCOMING_SIZE + 100)
@@ -40,13 +41,22 @@ typedef struct serverState{
 
 typedef enum Response_status {
     RES_OK = 0,
-    RES_ERROR,
-    RES_KEY_NOT_FOUND
+    RES_ERROR
 } Response_status;
+
+typedef enum Tag {
+    TAG_NIL = 0,
+    TAG_INT,
+    TAG_STR,
+    TAG_ARR,
+    TAG_DOUBLE
+} Tag;
+
 
 typedef struct Response {
     Response_status status;
-    char *message;
+    void *message;
+    int response_len;
 } Response;
 
 serverState State;
@@ -65,6 +75,17 @@ void die(const char *msg){
     exit(1);
 }
 
+char *response_enum(int status){
+    switch(status){
+        case RES_OK:
+            return "OK";
+        case RES_ERROR:
+            return "ERROR";
+        default:
+            return "UNKNOWN/INVALID COMMAND";
+    }
+}
+
 // KEY VALUE STORE
 void set_kv(const char *key, const char *value) {
     Entry *e = h_lookup(State.HashDB, key, 0);
@@ -74,20 +95,22 @@ void set_kv(const char *key, const char *value) {
         free(e->value);
         e->value = strdup(value);
     }
+    else { 
+        Entry *entry = malloc(sizeof(Entry));
+        entry->key = strdup(key);
+        entry->value = strdup(value);
+        insert_entry(entry, State.HashDB);
 
-    Entry *entry = malloc(sizeof(Entry));
-    entry->key = strdup(key);
-    entry->value = strdup(value);
-    insert_entry(entry, State.HashDB);
+        float load_factor = current_load_factor(State.HashDB);
+        State.HashDB->newer->load_factor = load_factor;
 
-    float load_factor = current_load_factor(State.HashDB);
-    State.HashDB->newer->load_factor = load_factor;
-
-    if (load_factor > MAX_LOAD_FACTOR) {
-        printf("Triggering resize\n");
-        trigger_resize(State.HashDB);
+        if (load_factor > MAX_LOAD_FACTOR) {
+            printf("Triggering resize\n");
+            trigger_resize(State.HashDB);
+        }
+        State.HashDB->entries++;
     }
-    State.HashDB->entries++;
+    h_rehash(State.HashDB);
 }
 
 char *get_kv(const char *k) {
@@ -141,6 +164,9 @@ int read_32bit(uint32_t *n, char *buf) {
     return sizeof(uint32_t);
 }
 
+//                     |  4 bytes  |     n     |
+// message, n (len) -> |     n     |  message  | -> outgoing buffer
+//
 void feed_outgoing(Conn *conn, char *msg, int n){
     int total_bytes = sizeof(uint32_t) + n;
     if (conn->outgoing_len + total_bytes > OUTGOING_SIZE) {
@@ -148,19 +174,18 @@ void feed_outgoing(Conn *conn, char *msg, int n){
         return;
     }
     memcpy(conn->outgoing + conn->outgoing_len, &n, sizeof(uint32_t));
-    memcpy(conn->outgoing + sizeof(uint32_t) + conn->outgoing_len, msg, n);
+    memcpy(conn->outgoing + conn->outgoing_len + sizeof(uint32_t), msg, n);
     conn->outgoing_len += total_bytes;
 }
-int deserialize_params(uint32_t len, char **request, int *params_len, char ***params) {
+int deserialize_params(uint32_t len, char *request, int *params_len, char ***params) {
     // this will be incremented
     int total_bytes = 0;
 
-    char *ptr = *request;
     uint32_t n;
     if (len <= total_bytes + sizeof(uint32_t) ) {
         return 0;
     }
-    ptr += read_32bit(&n, ptr);
+    request += read_32bit(&n, request);
     total_bytes += sizeof(uint32_t);
     *params_len = n;
     *params = malloc(n * sizeof(char*));
@@ -170,61 +195,137 @@ int deserialize_params(uint32_t len, char **request, int *params_len, char ***pa
             return 0;
         }
         uint32_t param_len;
-        ptr += read_32bit(&param_len, ptr);
+        request += read_32bit(&param_len, request);
         total_bytes += sizeof(uint32_t);
         if (len < total_bytes + param_len) {
             return 0;
         }
         char *param = malloc(param_len + 1);
-        memcpy(param, ptr, param_len);
+        memcpy(param, request, param_len);
         param[param_len] = '\0';
         (*params)[i] = param;
-        ptr += param_len;
+        request += param_len;
         total_bytes += param_len;
     }
     return 1;
 }
 
+// void out_str(char *str, int len, Response *response){
+//     response->message = malloc(sizeof(uint8_t) + sizeof(uint32_t) + len);
+//     response->response_len = 0;
+//
+//     uint8_t tag = TAG_STR;
+//     printf("tag: %i\n", tag);
+//
+//     memcpy(response->message, &tag, sizeof(uint8_t));
+//     response->response_len += sizeof(uint8_t);
+//
+//     memcpy(response->message + sizeof(uint8_t), &len, sizeof(uint32_t));
+//     response->response_len += sizeof(uint32_t);
+//
+//     memcpy(response->message + sizeof(uint8_t) + sizeof(uint32_t), str, len);
+//     response->response_len += len;
+// }
+//
+void out_str(char *str, int len, Response *response){
+    response->message = malloc(sizeof(uint8_t) + sizeof(uint32_t) + len);
+    response->response_len = sizeof(uint8_t) + sizeof(uint32_t) + len;
+
+    char* ptr = response->message;
+    uint8_t tag = TAG_STR;
+
+    memcpy(ptr, &tag, sizeof(uint8_t));
+    ptr += sizeof(uint8_t);
+
+    memcpy(ptr, &len, sizeof(uint32_t));
+    ptr += sizeof(uint32_t);
+
+    memcpy(ptr, str, len);
+}
+
+void out_arr(char **arr, int len, Response *response){
+    int total_keys_len = 0;
+    int tag_and_len = sizeof(uint8_t) + sizeof(uint32_t);
+
+    for(int x = 0; x < len; x++){
+        total_keys_len+=strlen(arr[x]);
+    }
+    response->message = malloc( tag_and_len + len * tag_and_len + total_keys_len);
+    response->response_len = tag_and_len + len * tag_and_len + total_keys_len;
+
+    char* ptr = response->message;
+    uint8_t tag = TAG_ARR;
+    memcpy(ptr, &tag, sizeof(uint8_t));
+    ptr += sizeof(uint8_t);
+
+    memcpy(ptr, &len, sizeof(uint32_t));
+    ptr += sizeof(uint32_t);
+
+    for(int x = 0; x < len; x++){
+        char* el = arr[x];
+        int el_len = strlen(el);
+        uint8_t tag = TAG_STR;
+        memcpy(ptr, &tag, sizeof(uint8_t));
+        ptr += sizeof(uint8_t);
+
+        memcpy(ptr, &el_len, sizeof(uint32_t));
+        ptr += sizeof(uint32_t);
+
+        memcpy(ptr, el, strlen(el));
+        ptr += el_len;
+    }
+}
+
 int perform_request(int params_len, char **params, Response *response){
-    h_rehash(State.HashDB);
     if ( params_len == 3 && strcmp(params[0], "set") == 0) {
         set_kv(params[1], params[2]);
         response->status = RES_OK;
-        response->message = strdup("OK");
         return 1;
     }
     else if ( params_len == 2 && strcmp(params[0], "get") == 0) {
         char *val = get_kv(params[1]);
         if (val != NULL) {
             response->status = RES_OK;
-            response->message = strdup(val);
+            out_str(val, strlen(val), response);
             return 1;
         } 
-        response->status = RES_KEY_NOT_FOUND;
-        response->message = strdup("Key not found");
+        response->status = RES_ERROR;
+        char *err = "KEY_NOT_FOUND";
+        out_str(err, strlen(err), response);
         return 1;
     }
     else if ( params_len == 2 && strcmp(params[0], "del") == 0) {
         if (del_kv(params[1])) {
             response->status = RES_OK;
-            response->message = strdup("OK");
             return 1;
         }
-        response->status = RES_KEY_NOT_FOUND;
-        response->message = strdup("Key not found");
+        response->status = RES_ERROR;
+        char *err = "KEY_NOT_FOUND";
+        out_str(err, strlen(err), response);
+        return 1;
+    }
+    else if ( params_len == 1 && strcmp(params[0], "keys") == 0){
+        char **keys = all_keys(State.HashDB);
+        for(int x = 0; x < State.HashDB->entries; x++){
+            printf("key: %s\n", keys[x]);
+        }
+        out_arr(keys, State.HashDB->entries, response); 
+        response->status = RES_OK;
         return 1;
     }
     response->status = RES_ERROR;
-    response->message = strdup("Unknown command");
     return 0;
 }
 
+//               |  4 bytes   |     n     |
+// Response* ->  | RES_STATUS |  message  | -> feed_outgoing()
 int feed_response(Conn *conn, Response *response){
-    int total_bytes = sizeof(uint32_t) + strlen(response->message);
+    int total_bytes = sizeof(uint32_t) + response->response_len;
     char *resp = malloc(total_bytes);
     memcpy(resp, &response->status, sizeof(uint32_t));
-    memcpy(resp + sizeof(uint32_t), response->message, strlen(response->message));
+    memcpy(resp + sizeof(uint32_t), response->message, response->response_len);
     feed_outgoing(conn, resp, total_bytes);
+    free(resp);
     return 1;
 }
 
@@ -254,21 +355,34 @@ bool parse_one_request(Conn *conn){
 
     char **params = NULL;
     int params_len = 0;
-    if(!deserialize_params(len, &request, &params_len, &params)){
+    if(!deserialize_params(len, request, &params_len, &params)){
         printf("somethinq went wrong\n");
         return false;
     }
-    Response *response = malloc(sizeof(Response));
+    for (int i = 0; i < params_len; i++) {
+        printf("param: %s\n", params[i]);
+    }
+    Response *response = calloc(1, sizeof(Response));
     perform_request(params_len, params, response);
+    if (!response->message) {
+        char *res = response_enum(response->status);
+        response->message = malloc(response->response_len + sizeof(uint8_t) + sizeof(uint32_t));
+        out_str(res, strlen(res), response);
+    }
 
     // wrting the response to client's connection's outgoing buffer
     feed_response(conn, response);
 
+
     // flushing the current request from incoming buffer
     memmove(conn->incoming, conn->incoming + total_len, conn->incoming_len - total_len);
     conn->incoming_len -= total_len;
-
+    for (int i = 0; i < params_len; i++) {
+        free(params[i]);
+    }
+    free(params);
     free(request);
+    free(response);
     return true;
 }
 
@@ -282,7 +396,7 @@ void handle_accept(int fd){
         return;
     }
     fd_set_nb(connfd);
-    Conn *newConn = malloc(sizeof(Conn));
+    Conn *newConn = calloc(1, sizeof(Conn));
     newConn->fd = connfd;
     newConn->want_read = true;
     newConn->outgoing_len = 0;
@@ -305,7 +419,7 @@ void handle_accept(int fd){
 void handle_write(Conn *conn){
     ssize_t rv = write(conn->fd, conn->outgoing, conn->outgoing_len);
     if (rv < 0) {
-        if (errno == EAGAIN) {
+        if (errno == EAGAIN || errno == EINTR) {
             return; // actually not ready
         }
         die("write() error");
@@ -314,6 +428,7 @@ void handle_write(Conn *conn){
         conn->want_close = true;
         return;
     }
+    printf("byte_written: %li\n", rv);
     memmove(conn->outgoing, conn->outgoing + rv, conn->outgoing_len - rv);
     if(rv == conn->outgoing_len){
         conn->want_read = true; 
@@ -352,6 +467,15 @@ void handle_read(Conn *conn){
 }
 
 
+// --------------------------------------------------------
+// |     4     |                      n                   |
+// |     n     |                   message                |
+// --------------------------------------------------------
+// +                                                      +
+// ------------------------------------------------------------
+// |           |   4    |   1   |   4  (except int)  |  len   |
+// |           | status |  Tag  |  len (except int)  |  data  |
+// ------------------------------------------------------------
 int main(){
     init();
     struct sockaddr_in addr = {
@@ -397,6 +521,7 @@ int main(){
         State.fds_polling_arg[0] = newPollArg;
         State.pollArgsLen = 1;
 
+        // Preparing polling args for connections
         for (int i = 0; i < State.maxFd+1; i++) {
             Conn *conn = State.fd2Conn[i];
             if(!conn){
@@ -419,6 +544,7 @@ int main(){
         }
 
         int rv = poll(State.fds_polling_arg, State.pollArgsLen, -1);
+
         if (rv < 0 ) {
             if (errno == EINTR) {
                 continue;   // sys call interrupted by signal
@@ -426,10 +552,13 @@ int main(){
             die("poll");
         }
         struct pollfd home_socket_arg = State.fds_polling_arg[0];
+
+        // Handling Home Socket ( TAKING NEW CONNECTIONS )
         if (home_socket_arg.revents) {
             handle_accept(home_socket_arg.fd);
         }
 
+        // Handling Already Established Connections
         for (int i = 1; i < State.pollArgsLen; i++) {
             struct pollfd listening_socket = State.fds_polling_arg[i];
             Conn *conn = State.fd2Conn[listening_socket.fd];

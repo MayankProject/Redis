@@ -83,6 +83,34 @@ Entry *h_lookup(HMap *HashDB, const char *key, uint64_t hash){
     return e;
 }
 
+char **all_keys(HMap *HashDB){
+    char **keys = calloc(HashDB->entries, sizeof(char*));
+    int counter = 0;
+    // in new table
+    for (int x = 0; x < HashDB->newer->total_size; x++) {
+        Entry *entry = HashDB->newer->entries[x];
+        while(entry){
+            keys[counter] = strdup(entry->key);
+            counter++;
+            entry = entry->node.next;
+        }
+    }
+    if (!HashDB->older){
+        return keys;
+    }
+
+    // in older one
+    for (int x = 0; x < HashDB->older->total_size; x++) {
+        Entry *entry = HashDB->older->entries[x];
+        while(entry){
+            keys[counter] = entry->key;
+            counter++;
+            entry = entry->node.next;
+        }
+    }
+    return keys;
+}
+
 // Takes Entry* and inserts it into the hashmap's newer(est) table
 int insert_entry(Entry *entry, HMap *HashDB){
     HTab *db = HashDB->newer;
