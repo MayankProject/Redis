@@ -106,7 +106,6 @@ int read_by_tag(int client_fd, Response *response){
             response->arr.val = calloc(len, sizeof(Response*));
             response->arr.len = len;
             for(int i = 0; i < len; i++){
-                int element_len;
                 Response *element = calloc(1, sizeof(Response));
                 read_n_bytes(client_fd, &element->Tag, sizeof(uint8_t));
                 read_by_tag(client_fd, element);
@@ -193,39 +192,42 @@ int main() {
     ret = connect(sockfd, (struct sockaddr *) &addr, sizeof(addr));
     if( ret == -1 ) die("connect");
 
-    #define total_params 3
-    char* params1[total_params] = {"set", "name", "mayank"};
-    char* params4[total_params] = {"set", "std", "undef"};
-    char* params2[total_params-2] = {"keys"};
-    char* params3[total_params-1] = {"get", "name"};
-    char* request;
-    int request_len;
+    struct Request {
+        char** params;
+        int len;
+    };
+    int n_request = 10;
+    struct Request *batch_requests[n_request];
+    memset(batch_requests, 0, n_request * sizeof(struct Request*));
+    struct Request *request;
 
-    request_len = 0;
-    request = malloc(1024);
-    make_request(params1, total_params, request, &request_len);
-    write_full(sockfd, request, request_len);
-    free(request);
+    request = malloc(sizeof(struct Request));
+    request->len = 3;
+    request->params = (char*[]){"set", "name", "mayank"};
+    batch_requests[0] = request;
 
-    request_len = 0;
-    request = malloc(1024);
-    make_request(params4, total_params, request, &request_len);
-    write_full(sockfd, request, request_len);
-    free(request);
+    request = malloc(sizeof(struct Request));
+    request->len = 2;
+    request->params = (char*[]){"get", "name"};
+    batch_requests[1] = request;
 
-    request_len = 0;
-    request = malloc(1024);
-    make_request(params2, total_params-2, request, &request_len);
-    write_full(sockfd, request, request_len);
-    free(request);
+    request = malloc(sizeof(struct Request));
+    request->len = 1;
+    request->params = (char*[]){"keys"};
+    batch_requests[2] = request;
 
+    for (int x = 0; x < n_request; x++){
+        struct Request *request = batch_requests[x];
+        if(!request){
+            continue;
+        }
+        char* response;
+        int res_len = 0;
+        response = malloc(1024);
+        make_request(request->params, request->len, response, &res_len);
+        write_full(sockfd, response, res_len);
+    }
 
-    request_len = 0;
-    request = malloc(1024);
-    make_request(params3, total_params-1, request, &request_len);
-    write_full(sockfd, request, request_len);
-    free(request);
-    
     pthread_t thread;
     pthread_create(&thread, NULL, handle_read_thread, &sockfd);  
     while(1){
