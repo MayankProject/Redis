@@ -1,3 +1,5 @@
+#include "server.h"
+#include "common.h"
 #include "hashmap.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -17,6 +19,7 @@
 #define MAXLEN (32 << 20)
 #define INCOMING_SIZE (MAXLEN + sizeof(uint32_t))
 #define OUTGOING_SIZE (INCOMING_SIZE + 100)
+
 
 typedef struct Conn{
     int fd;
@@ -88,10 +91,10 @@ char *response_enum(int status){
 
 // KEY VALUE STORE
 void set_kv(const char *key, const char *value) {
-    Entry *e = h_lookup(State.HashDB, key, 0);
-
+    HNode *n = h_lookup(State.HashDB, key, 0);
     // If entry is already in the hashmap modify
-    if ( e != NULL) {
+    if ( n != NULL) {
+        Entry *e = hnode_to_entry(n);
         free(e->value);
         e->value = strdup(value);
     }
@@ -99,7 +102,8 @@ void set_kv(const char *key, const char *value) {
         Entry *entry = malloc(sizeof(Entry));
         entry->key = strdup(key);
         entry->value = strdup(value);
-        insert_entry(entry, State.HashDB);
+        entry->node.hash = str_hash((uint8_t*) key, strlen(key));
+        insert_entry(&entry->node, State.HashDB);
 
         float load_factor = current_load_factor(State.HashDB);
         State.HashDB->newer->load_factor = load_factor;
@@ -110,31 +114,32 @@ void set_kv(const char *key, const char *value) {
         }
         State.HashDB->entries++;
     }
+    scan_map(State.HashDB);
     h_rehash(State.HashDB);
 }
 
 char *get_kv(const char *k) {
-    Entry *e = h_lookup(State.HashDB, k, 0);
-    if (e) return e->value;
+    HNode *n = h_lookup(State.HashDB, k, 0);
+    if (n) return hnode_to_entry(n)->value;
     return NULL;
 }
 
 int del_kv(const char *key) {
     const uint64_t hash = str_hash((uint8_t*)key, strlen(key));
-
     HTab *db = State.HashDB->newer;
-    Entry *e = htab_lookup(db, key, hash);
+    HNode *n = htab_lookup(db, key, hash);
 
-    if (State.HashDB->older && e == NULL) {
+    if (State.HashDB->older && n == NULL) {
         db = State.HashDB->older;
-        e = htab_lookup(db, key, hash);
+        n = htab_lookup(db, key, hash);
     }
 
-    if (e == NULL) {
+    if (n == NULL) {
         printf("Entry not found\n");
         return 0;
     }
-    detach_node(&e->node, db);
+    Entry *e = hnode_to_entry(n);
+    detach_node(n, db);
     free(e->key);
     free(e->value);
     free(e);

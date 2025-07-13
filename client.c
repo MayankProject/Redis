@@ -55,7 +55,6 @@ int write_full(int fd, char *msg, int n) {
     int bytes_sent = 0;
     while(bytes_sent < total_bytes) {
         int bytes_rt = write(fd, &buf[bytes_sent], total_bytes - bytes_sent);
-        printf("%i\n", bytes_rt);
         if (bytes_rt <= 0) return -1;
         bytes_sent += bytes_rt;
     }
@@ -181,6 +180,62 @@ int make_request(char **params, int params_len, char *request, int *request_len)
     return 1;
 }
 
+typedef struct Request {
+    char **params;
+    int    len;
+} Request;
+
+#define MAX_BATCH 16
+
+static Request *gen_request(int len, char *argv[]){
+    Request *req  = malloc(sizeof *req);
+    req->len      = len;
+    req->params   = argv;
+    return req;
+}
+
+static size_t build_sample_batch(Request *batch[MAX_BATCH])
+{
+    static const struct {
+        int   argc;
+        char *argv[6];
+    } script[] = {
+        {3, {"set", "name", "alice"}},
+        {2, {"get", "name"}},
+        {3, {"set", "ik", "bob"}},
+        {3, {"set", "nme", "bob"}},
+        {3, {"set", "nae", "bob"}},
+        {3, {"set", "nakkje", "bob"}},
+        {3, {"set", "nm", "bob"}},
+        {2, {"get", "nae"}},
+        {2, {"get", "name"}},         /* should return nil on real server */
+        {2, {"del", "no_such_key"}},
+    };
+
+    size_t nreq = sizeof script / sizeof script[0];
+    if (nreq > MAX_BATCH) nreq = MAX_BATCH;
+
+    for (size_t i = 0; i < nreq; i++){
+        batch[i] = gen_request(script[i].argc, (char**) script[i].argv);
+    }
+
+    for (size_t i = nreq; i < MAX_BATCH; i++){
+        batch[i] = NULL;
+    }
+
+    return nreq;
+}
+
+static void dump_batch(Request *batch[], size_t nreq)
+{
+    for (size_t i = 0; i < nreq; ++i) {
+        Request *r = batch[i];
+        printf("[%zu] (len=%d):", i, r->len);
+        for (int j = 0; j < r->len; ++j)
+            printf(" %s", r->params[j]);
+        putchar('\n');
+    }
+}
 int main() {
     struct sockaddr_in addr;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -192,31 +247,12 @@ int main() {
     ret = connect(sockfd, (struct sockaddr *) &addr, sizeof(addr));
     if( ret == -1 ) die("connect");
 
-    struct Request {
-        char** params;
-        int len;
-    };
-    int n_request = 10;
-    struct Request *batch_requests[n_request];
-    memset(batch_requests, 0, n_request * sizeof(struct Request*));
-    struct Request *request;
+    Request *batch_requests[MAX_BATCH];
 
-    request = malloc(sizeof(struct Request));
-    request->len = 3;
-    request->params = (char*[]){"set", "name", "mayank"};
-    batch_requests[0] = request;
+    size_t count = build_sample_batch(batch_requests);
+    dump_batch(batch_requests, count);
 
-    request = malloc(sizeof(struct Request));
-    request->len = 2;
-    request->params = (char*[]){"get", "name"};
-    batch_requests[1] = request;
-
-    request = malloc(sizeof(struct Request));
-    request->len = 1;
-    request->params = (char*[]){"keys"};
-    batch_requests[2] = request;
-
-    for (int x = 0; x < n_request; x++){
+    for (int x = 0; x < count; x++){
         struct Request *request = batch_requests[x];
         if(!request){
             continue;
