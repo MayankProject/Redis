@@ -53,13 +53,13 @@ void scan_map(HMap *HashDB);
 
 // CRUD 
 
-// adds (Entry*) to the hashmap's newer table
-int insert_entry(HNode *node, HMap *HashDB);
+// adds (HNode*) to the hashmap's newer table
+int insert_node(HNode *node, HMap *HashDB);
 
-// Looks up an entry in the table
+// Looks up an key in the table
 HNode *htab_lookup(HTab *db, const char *key, uint64_t hash);
 //
-// // Looks up an entry in the hashmap
+// // Looks up an key in the hashmap
 HNode *h_lookup(HMap *HashDB, const char *key, uint64_t hash);
 
 char **all_keys(HMap *HashDB);

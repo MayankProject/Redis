@@ -118,8 +118,8 @@ char **all_keys(HMap *HashDB){
     return keys;
 }
 
-// Takes Entry* and inserts it into the hashmap's newer(est) table
-int insert_entry(HNode *node, HMap *HashDB){
+// Takes HNode* and inserts it into the hashmap's newer(est) table
+int insert_node(HNode *node, HMap *HashDB){
     HTab *db = HashDB->newer;
     uint32_t tab_pos = node->hash & db->mask;
     HNode *last = db->nodes[tab_pos];

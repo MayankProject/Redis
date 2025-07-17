@@ -103,7 +103,7 @@ void set_kv(const char *key, const char *value) {
         entry->key = strdup(key);
         entry->value = strdup(value);
         entry->node.hash = str_hash((uint8_t*) key, strlen(key));
-        insert_entry(&entry->node, State.HashDB);
+        insert_node(&entry->node, State.HashDB);
 
         float load_factor = current_load_factor(State.HashDB);
         State.HashDB->newer->load_factor = load_factor;
