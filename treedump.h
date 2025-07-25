@@ -1,5 +1,6 @@
-#import "avl.h"
+#include "avl.h"
 #include <stdio.h>
+#include <unistd.h>
 #ifndef TREE_DUMP_H
 #define TREE_DUMP_H
 
@@ -22,10 +23,10 @@ _scan_tree(const AvlNode *node, const char *prefix, int is_left)
     _scan_tree(node->right, new_prefix, 0);
 
     /* print this node */
-    printf("%s%s%d(%i)\n",
+    printf("%s%s%f(%i)(%i)\n",
            prefix,
            is_left ? BRANCH_LF : BRANCH_RT,
-           node->data, node->height);
+           node->data, node->height, node->subnodes);
 
     /* then print left subtree */
     snprintf(new_prefix, sizeof new_prefix, "%s%s",
@@ -40,7 +41,8 @@ static inline void dump_tree(const AvlNode *root)
         return;
     }
     _scan_tree(root->right, "", 0);
-    printf("%d(%i)\n", root->data, root->height);          /* root itself */
+    // sleep(2);
+    printf("%f(%i)(%i)\n", root->data, root->height, root->subnodes);          /* root itself */
     _scan_tree(root->left,  "", 1);
 }
 

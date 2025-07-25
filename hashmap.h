@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include <unistd.h>
 #include <stdint.h>
 
@@ -46,9 +47,9 @@ uint64_t str_hash(const uint8_t *data, size_t len);
 int trigger_resize(HMap *HashDB);
 
 // Prints the contents of the table
-void scan_tab(HTab *db);
+void scan_tab(HTab *db, void (*print_val)(HNode*));
 // Prints the contents of the hashmap
-void scan_map(HMap *HashDB);
+void scan_map(HMap *HashDB, void (*print_val)(HNode*));
 
 
 // CRUD 
@@ -57,10 +58,10 @@ void scan_map(HMap *HashDB);
 int insert_node(HNode *node, HMap *HashDB);
 
 // Looks up an key in the table
-HNode *htab_lookup(HTab *db, const char *key, uint64_t hash);
+HNode *htab_lookup(HTab *db, const char *key, bool (*eq)(const char*, HNode*));
 //
 // // Looks up an key in the hashmap
-HNode *h_lookup(HMap *HashDB, const char *key, uint64_t hash);
+HNode *h_lookup(HMap *HashDB, const char *key, bool (*eq)(const char*, HNode*));
 
 char **all_keys(HMap *HashDB);
 
@@ -70,3 +71,4 @@ int detach_node(HNode *node, HTab *db);
 // moves the entries from old table to new table
 void h_rehash(HMap *HashDB);
 
+void possibly_resize(HMap *map);

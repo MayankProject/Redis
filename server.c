@@ -1,9 +1,12 @@
+#include "zset.h"
+#include "treedump.h"
 #include "server.h"
 #include "common.h"
 #include "hashmap.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <math.h>    
 #include <string.h>
 #include <sys/poll.h>
 #include <stdbool.h>
@@ -88,10 +91,25 @@ char *response_enum(int status){
             return "UNKNOWN/INVALID COMMAND";
     }
 }
+bool str2dbl(const char *s, double *out) {
+    char *endp = NULL;
+    *out = strtod(s, &endp);
+    return endp == s + strlen(s) && !isnan(*out);
+}
+
+bool eq_entry(const char* key, HNode *node){
+    return strcmp(hnode_to_entry(node)->key, key) == 0;
+}
+
+// takes HNode and prints out (key, value) for entry
+void print_val_entry(HNode* n){
+    Entry *entry = hnode_to_entry(n);
+    printf("> %s, %s\n", entry->key, entry->value);
+}
 
 // KEY VALUE STORE
 void set_kv(const char *key, const char *value) {
-    HNode *n = h_lookup(State.HashDB, key, 0);
+    HNode *n = h_lookup(State.HashDB, key, eq_entry);
     // If entry is already in the hashmap modify
     if ( n != NULL) {
         Entry *e = hnode_to_entry(n);
@@ -101,37 +119,31 @@ void set_kv(const char *key, const char *value) {
     else { 
         Entry *entry = malloc(sizeof(Entry));
         entry->key = strdup(key);
+        entry->type = K_V_PAIR;
         entry->value = strdup(value);
         entry->node.hash = str_hash((uint8_t*) key, strlen(key));
         insert_node(&entry->node, State.HashDB);
 
-        float load_factor = current_load_factor(State.HashDB);
-        State.HashDB->newer->load_factor = load_factor;
-
-        if (load_factor > MAX_LOAD_FACTOR) {
-            printf("Triggering resize\n");
-            trigger_resize(State.HashDB);
-        }
+        possibly_resize(State.HashDB);
         State.HashDB->entries++;
     }
-    scan_map(State.HashDB);
+    scan_map(State.HashDB, print_val_entry);
     h_rehash(State.HashDB);
 }
 
 char *get_kv(const char *k) {
-    HNode *n = h_lookup(State.HashDB, k, 0);
+    HNode *n = h_lookup(State.HashDB, k, eq_entry);
     if (n) return hnode_to_entry(n)->value;
     return NULL;
 }
 
 int del_kv(const char *key) {
-    const uint64_t hash = str_hash((uint8_t*)key, strlen(key));
     HTab *db = State.HashDB->newer;
-    HNode *n = htab_lookup(db, key, hash);
+    HNode *n = htab_lookup(db, key, eq_entry);
 
     if (State.HashDB->older && n == NULL) {
         db = State.HashDB->older;
-        n = htab_lookup(db, key, hash);
+        n = htab_lookup(db, key, eq_entry);
     }
 
     if (n == NULL) {
@@ -145,6 +157,95 @@ int del_kv(const char *key) {
     free(e);
     State.HashDB->entries--;
     return 1;
+}
+
+int Z_add(char* params[4]){
+
+    char *endp = NULL;
+    char *key = params[1];
+    char *name = params[2];
+    double score;
+
+    Entry* entry;
+    if(!str2dbl(params[3], &score)){
+        return 0;
+    };
+    // check if "leaderboard" exist in global hashmap;
+    HNode *node = h_lookup(State.HashDB, key, eq_entry);
+    if(node && hnode_to_entry(node)->type != Z_SET){
+        return 0;
+    }
+    else if (!node){
+        entry = malloc(sizeof(Entry));
+        entry->key = strdup(key);
+        entry->node.hash = str_hash((uint8_t*) key, strlen(key));
+        entry->type = Z_SET;
+        entry->set.map = init_hashmap();
+        entry->set.root = NULL;
+        insert_node(&entry->node, State.HashDB);
+        State.HashDB->entries++;
+        possibly_resize(State.HashDB);
+    }
+    else{
+        entry = hnode_to_entry(node);
+    }
+    HNode *old_name_hnode = h_lookup(entry->set.map, name, eq_znode);
+    if(old_name_hnode){
+        remove_zset(&entry->set, name);
+        add_zset(&entry->set, name, score);
+        return 1;
+    }
+
+    ZNode *new_ZNode = add_zset(&entry->set, name, score);
+    if(!new_ZNode){
+        return 0;
+    }
+    if(entry->set.root) dump_tree(entry->set.root);
+    printf("%s: %f\n", new_ZNode->name, new_ZNode->score);
+    return 1;
+};
+
+double Z_score(char* key, char* name){
+    HNode *n = h_lookup(State.HashDB, key, eq_entry);
+    if(!n){
+        return -1;
+    }
+    Entry *ent = hnode_to_entry(n);
+    if(ent->type != Z_SET){
+        return -1;
+    }
+    ZNode *z_node = lookup_zset(ent->set, name);
+    if(!z_node){
+        return -1;
+    }
+    return z_node->score;
+}
+
+int Z_rem(char *key, char *name){
+    HNode *n = h_lookup(State.HashDB, key, eq_entry);
+    if(!n){
+        return 0;
+    }
+    Entry *ent = hnode_to_entry(n);
+    if(ent->type != Z_SET){
+        return -1;
+    }
+    int ret = remove_zset(&ent->set, name);
+    // printf("root: %f\n", ent->set.root->right->left->data);
+    if(ent->set.root) dump_tree(ent->set.root);
+    return ret;
+}
+
+int Z_rank(char *key, char *name){
+    HNode *n = h_lookup(State.HashDB, key, eq_entry);
+    if(!n){
+        return 0;
+    }
+    Entry *ent = hnode_to_entry(n);
+    if(ent->type != Z_SET){
+        return -1;
+    }
+    return lookup_zset_rank(&ent->set, name);
 }
 
 static void fd_set_nb(int fd) {
@@ -171,7 +272,6 @@ int read_32bit(uint32_t *n, char *buf) {
 
 //                     |  4 bytes  |     n     |
 // message, n (len) -> |     n     |  message  | -> outgoing buffer
-//
 void feed_outgoing(Conn *conn, char *msg, int n){
     int total_bytes = sizeof(uint32_t) + n;
     if (conn->outgoing_len + total_bytes > OUTGOING_SIZE) {
@@ -232,6 +332,19 @@ int deserialize_params(uint32_t len, char *request, int *params_len, char ***par
 //     response->response_len += len;
 // }
 //
+void out_double(double val, Response *response){
+    response->message = malloc(sizeof(uint8_t) + sizeof(uint64_t));
+    response->response_len = sizeof(uint8_t) + sizeof(uint64_t);
+
+    char* ptr = response->message;
+    uint8_t tag = TAG_DOUBLE;
+
+    memcpy(ptr, &tag, sizeof(uint8_t));
+    ptr += sizeof(uint8_t);
+
+    memcpy(ptr, &val, sizeof(uint64_t));
+}
+
 void out_str(char *str, int len, Response *response){
     response->message = malloc(sizeof(uint8_t) + sizeof(uint32_t) + len);
     response->response_len = sizeof(uint8_t) + sizeof(uint32_t) + len;
@@ -316,6 +429,46 @@ int perform_request(int params_len, char **params, Response *response){
         }
         out_arr(keys, State.HashDB->entries, response); 
         response->status = RES_OK;
+        return 1;
+    }
+    else if ( params_len == 4 && strcmp(params[0], "zadd") == 0){
+        if (Z_add(params)){
+            response->status = RES_OK;
+            return 1;
+        }
+        response->status = RES_ERROR;
+        char *err = "Something went wrong";
+        out_str(err, strlen(err), response);
+        return 1;
+    }
+    else if ( params_len == 3 && strcmp(params[0], "zscore") == 0){
+        double score = Z_score(params[1], params[2]);
+        printf("score: %f\n", score);
+        if (score != -1){
+            response->status = RES_OK;
+            out_double(score, response);
+            return 1;
+        }
+        response->status = RES_ERROR;
+        char *err = "Something went wrong";
+        out_str(err, strlen(err), response);
+        return 1;
+    }
+    else if ( params_len == 3 && strcmp(params[0], "zrem") == 0){
+        int status = Z_rem(params[1], params[2]);
+        if (status){
+            response->status = RES_OK;
+            return 1;
+        }
+        response->status = RES_ERROR;
+        char *err = "Something went wrong";
+        out_str(err, strlen(err), response);
+        return 1;
+    }
+    else if ( params_len == 3 && strcmp(params[0], "zrank") == 0){
+        double rank = Z_rank(params[1], params[2]);
+        printf("rank: %f\n", rank);
+        out_double(*((double*) &rank), response);
         return 1;
     }
     response->status = RES_ERROR;

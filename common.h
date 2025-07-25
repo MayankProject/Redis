@@ -1,6 +1,8 @@
 #pragma once
 #include <stddef.h>   /* offsetof */
+#include "avl.h"
 #include "server.h"
+#include "zset.h"
 
 #define LOG_INT(val) printf("log: %i\n", val)
 
@@ -14,4 +16,12 @@
 
 static Entry *hnode_to_entry(HNode *n) {
     return container_of(n, Entry, node);
+};
+
+static ZNode *hnode_to_znode(HNode *n) {
+    return container_of(n, ZNode, node);
+}
+
+static ZNode *avlNode_to_znode(AvlNode *n) {
+    return container_of(n, ZNode, tree_node);
 }

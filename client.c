@@ -134,6 +134,7 @@ int read_full(int client_fd, Response *response) {
     // STATUS
     read_n_bytes(client_fd, &response->Status, sizeof(uint32_t));
     read_n_bytes(client_fd, &response->Tag, sizeof(uint8_t));
+    printf("tag: %i\n", response->Tag);
     read_by_tag(client_fd, response);
     return 0;
 }
@@ -150,6 +151,12 @@ void output_response(Response *response){
             }
             return;
         };
+        case TAG_DOUBLE: {
+            double val;
+            memcpy(&val, &response->double_num, sizeof(val));
+            printf("element: %f\n", val);
+            return;
+        }
     }
 }
 void* handle_read_thread(void* raw_fd) {
@@ -200,16 +207,20 @@ static size_t build_sample_batch(Request *batch[MAX_BATCH])
         int   argc;
         char *argv[6];
     } script[] = {
-        {3, {"set", "name", "alice"}},
-        {2, {"get", "name"}},
-        {3, {"set", "ik", "bob"}},
-        {3, {"set", "nme", "bob"}},
-        {3, {"set", "nae", "bob"}},
-        {3, {"set", "nakkje", "bob"}},
-        {3, {"set", "nm", "bob"}},
-        {2, {"get", "nae"}},
-        {2, {"get", "name"}},         /* should return nil on real server */
-        {2, {"del", "no_such_key"}},
+        {3, {"set", "mayank", "8"}},
+        {4, {"zadd", "leaderboard", "ansh", "8"}},
+        {4, {"zadd", "leaderboard", "mayank", "2"}},
+        {4, {"zadd", "leaderboard", "kyle", "1"}},
+        {4, {"zadd", "leaderboard", "sam", "3"}},
+        {4, {"zadd", "leaderboard", "lara", "17"}},
+        {4, {"zadd", "leaderboard", "nina", "14"}},
+        {4, {"zadd", "leaderboard", "zara", "18"}},
+        {4, {"zadd", "leaderboard", "aaron", "4"}},
+        {4, {"zadd", "leaderboard", "leo", "19"}},
+        {3, {"zrem", "leaderboard", "ansh"}},
+        {3, {"zrem", "leaderboard", "nina"}},
+        {3, {"zscore", "leaderboard", "mayank"}},
+        {2, {"get", "mayank"}},
     };
 
     size_t nreq = sizeof script / sizeof script[0];

@@ -24,8 +24,11 @@ int height(AvlNode *node){
 int updateNode(AvlNode *node){
     int leftheight = height(node->left);
     int rightheight = height(node->right);
+    int leftSubNodes = node->left ? node->left->subnodes + 1: 0;
+    int rightSubNodes = node->right ? node->right->subnodes + 1: 0;
     int max = leftheight > rightheight ? leftheight : rightheight;
     node->height = max + 1;
+    node->subnodes = leftSubNodes + rightSubNodes;
     return 1;
 }
 int attach_avl_node(AvlNode *node, AvlNode *tree){
@@ -42,19 +45,17 @@ int attach_avl_node(AvlNode *node, AvlNode *tree){
     }
     return 1;
 }
-int detatch_avl_node(AvlNode *node){
+AvlNode *detatch_avl_node(AvlNode *node, AvlNode **root){
     AvlNode *parent = node->parent;
-    if(!parent){
-        printf("Can't remove root");
-        return 0;
-    }
-    AvlNode *next;
-    if(node->height == 0){
-        if(parent->left->data == node->data){
-            parent->left = NULL;
-        }
-        else {
-            parent->right = NULL;
+    AvlNode *next = NULL;
+    if(node->subnodes == 0){
+        if (parent){
+            if(parent->data > node->data){
+                parent->left = NULL;
+            }
+            else {
+                parent->right = NULL;
+            }
         }
     }
     else if(node->left && node->right){
@@ -62,21 +63,28 @@ int detatch_avl_node(AvlNode *node){
         while(next->left){
             next = next->left;
         }
+        AvlNode *nextParent = next->parent;
+        detatch_avl_node(next, root);
         node->right->parent = NULL;
         next->parent = NULL;
         node->left->parent = NULL;
         attach_avl_node(node->left, next);
-        if(node->right->data != next->data){
-            attach_avl_node(node->right, next);
+        attach_avl_node(node->right, next);
+        if(parent){
+            attach_avl_node(next, parent);
         }
-        attach_avl_node(next, parent);
+        while(nextParent){
+            updateNode(nextParent);
+            balance(nextParent, root);
+            nextParent = nextParent->parent;
+        }
     }
     else{
         next = node->left ? node->left : node->right;
-        attach_avl_node(next, parent);
+        next->parent = NULL;
+        parent && attach_avl_node(next, parent);
     }
-    free(node);
-    return 1;
+    return next;
 }
 
 AvlNode *rotateRight(AvlNode *node){
@@ -136,7 +144,7 @@ AvlNode *balance(AvlNode *node, AvlNode **root){
     int balance = rightHeight - leftHeight;
     // R
     if (1 < balance){
-        printf("Unbalanced\n");
+        printf("Unbalanced right\n");
         int s_leftHeight = height(node->right->left);
         int s_rightHeight = height(node->right->right);
         // R
@@ -145,13 +153,13 @@ AvlNode *balance(AvlNode *node, AvlNode **root){
         }
         // L
         else{
-            node = rotateRight(node);
+            rotateRight(node->right);
             node = rotateLeft(node);
         }
     }
     // L
     else if(balance < -1){
-        printf("Unbalanced\n");
+        printf("Unbalanced left\n");
         int s_leftHeight = height(node->left->left);
         int s_rightHeight = height(node->left->right);
         // R
@@ -189,82 +197,175 @@ int insert_avl_node(AvlNode *node, AvlNode *tree){
     return 1;
 }
 
-AvlNode *init(const int val){
+int find_rank(double val, AvlNode *root){
+    int rank = root->left ? root->left->subnodes + 1: 0;
+    if(root->parent){
+        printf("expected root!\n");
+    };
+    while (true){
+        if (root->data < val){
+            if(!root->right) break;
+            root = root->right;
+            rank += (root->left ? root->left->subnodes + 1: 0) + 1;
+        }
+        else if (root->data > val){
+            if(!root->left) break;
+            root = root->left;
+            rank -= (root->right ? root->right->subnodes + 1: 0) + 1;
+        }
+        else {
+            return rank;
+        }
+    }
+    return -1;
+}
+
+AvlNode *init_tree_node(const int val){
     AvlNode *node = calloc(1, sizeof(AvlNode));
     node->parent = NULL;
     node->data = val;
     node->left = NULL;
     node->right = NULL;
     node->height = 0;
+    node->subnodes = 0;
     return node;
 }
 
-int insert_val(int val, AvlNode **tree){
+AvlNode *insert_val(int val, AvlNode **tree){
     AvlNode *node;
-    node = init(val);
+    node = init_tree_node(val);
     insert_avl_node(node, *tree);
-    AvlNode *parent = node->parent;
-    while(parent){
-        balance(parent, tree);
-        parent = parent->parent;
+    AvlNode *iter = node;
+    dump_tree(*tree);
+    while(iter){
+        printf("at: %f\n", iter->data);
+        balance(iter, tree);
+        iter = iter->parent;
     }
-    return 1;
+    return node;
 }
-int remove_val(int val, AvlNode **tree){
-    AvlNode *node = lookup(val, *tree);
-    if(!node) return 0;
-    AvlNode *parent = node->parent;
-    detatch_avl_node(node);
-    while(parent){
-        balance(parent, tree);
-        parent = parent->parent;
-    }
-    return 1;
-}
-int main(){
-    AvlNode *tree = init(20);
-    insert_val(10, &tree);
-    dump_tree(tree);
 
-    insert_val(5, &tree);     // causes no rotation
-    dump_tree(tree);
-
-    insert_val(6, &tree);     // causes LR rotation at 10
-    dump_tree(tree);
-
-    insert_val(4, &tree);     // no rotation
-    dump_tree(tree);
-
-    insert_val(7, &tree);     // causes RR at 5 or no rotation depending on balance
-    dump_tree(tree);
-
-    insert_val(-20, &tree);   // deepens left subtree
-    dump_tree(tree);
-
-    insert_val(15, &tree);    // new right-heavy
-    dump_tree(tree);
-
-    insert_val(20, &tree);    // causes RR at 15
-    dump_tree(tree);
-
-    insert_val(25, &tree);    // causes RR at 20
-    dump_tree(tree);
-
-    insert_val(13, &tree);    // causes LR at 15
-    dump_tree(tree);
-
-    insert_val(14, &tree);    // further triggers balancing
-    dump_tree(tree);
-
-    remove_val(5, &tree); // delete node with 2 children
-    dump_tree(tree);
-
-    remove_val(6, &tree); // delete node with 2 children
-    dump_tree(tree);
-
-    remove_val(-20, &tree); // delete node with 1 child
-    dump_tree(tree);
-
-    LOG_INT(tree->data);
-    return 1;
-}
+// int remove_val(int val, AvlNode **tree){
+//     AvlNode *node = lookup(val, *tree);
+//     if(!node) return 0;
+//     AvlNode *parent = node->parent;
+//     detatch_avl_node(node);
+//     while(parent){
+//         balance(parent, tree);
+//         parent = parent->parent;
+//     }
+//     return 1;
+// }
+// int main(){
+//     AvlNode *tree = init_tree_node(20);
+//     insert_val(18, &tree);
+//     dump_tree(tree);
+//
+//     insert_val(5, &tree);       // no rotation
+//     dump_tree(tree);
+//
+//     insert_val(14, &tree);       // causes LR at 10
+//     dump_tree(tree);
+//
+//     insert_val(4, &tree);       // no rotation
+//     dump_tree(tree);
+//
+//     insert_val(10, &tree);       // no rotation
+//     dump_tree(tree);
+//
+//     insert_val(8, &tree);       // no rotation
+//     dump_tree(tree);
+//
+//     insert_val(9, &tree);       // no rotation
+//     dump_tree(tree);
+//     // insert_val(7, &tree);       // RR at 5 or minor balance
+//     // dump_tree(tree);
+//     //
+//     // insert_val(-20, &tree);     // left-heavy deep
+//     // dump_tree(tree);
+//     //
+//     // insert_val(15, &tree);      // right child of 10
+//     // dump_tree(tree);
+//     //
+//     // insert_val(20, &tree);      // RR at 15
+//     // dump_tree(tree);
+//     //
+//     // insert_val(25, &tree);      // RR at 20
+//     // dump_tree(tree);
+//     //
+//     // insert_val(13, &tree);      // LR at 15
+//     // dump_tree(tree);
+//     //
+//     // insert_val(100, &tree);     // triggers balancing at upper levels
+//     // dump_tree(tree);
+//     //
+//     // insert_val(35, &tree);      // causes rebalancing
+//     // dump_tree(tree);
+//     //
+//     // insert_val(12, &tree);      // fits on left of 13
+//     // dump_tree(tree);
+//     //
+//     // insert_val(24, &tree);      // causes LR at 25
+//     // dump_tree(tree);
+//     //
+//     // insert_val(8, &tree);       // right child of 7
+//     // dump_tree(tree);
+//     //
+//     // insert_val(9, &tree);       // causes RL at 7
+//     // dump_tree(tree);
+//     //
+//     // insert_val(11, &tree);      // triggers deeper rebalancing
+//     // dump_tree(tree);
+//     //
+//     // insert_val(1, &tree);       // left-deep insert
+//     // dump_tree(tree);
+//     //
+//     // insert_val(0, &tree);       // further left, may rebalance
+//     // dump_tree(tree);
+//     //
+//     // insert_val(3, &tree);       // LR at 4 possibly
+//     // dump_tree(tree);
+//     //
+//     // insert_val(2, &tree);       // continues left-side stress
+//     // dump_tree(tree);
+//     //
+//     // insert_val(-5, &tree);      // edge insert
+//     // dump_tree(tree);
+//     //
+//     // insert_val(14, &tree);      // completes 12-13-14 chain
+//     // dump_tree(tree);
+//     //
+//     // insert_val(17, &tree);      // in right middle
+//     // dump_tree(tree);
+//     // //
+//     // insert_val(16, &tree);      // fills near 17
+//     // dump_tree(tree);
+//     // //
+//     // insert_val(18, &tree);      // RR at 17?
+//     // dump_tree(tree);
+//     //
+//     // insert_val(26, &tree);      // fills 24-25-26
+//     // dump_tree(tree);
+//     //
+//     // insert_val(27, &tree);      // causes RR at 26
+//     // dump_tree(tree);
+//     //
+//     // insert_val(23, &tree);      // causes LR at 24
+//     // dump_tree(tree);
+//     //
+//     // insert_val(19, &tree);      // right side stress
+//     // dump_tree(tree);
+//     //
+//     // insert_val(21, &tree);      // right mid-depth insert
+//     // dump_tree(tree);
+//     //
+//     // insert_val(40, &tree);      // goes far right
+//     // dump_tree(tree);
+//     //
+//     // insert_val(42, &tree);      // right-right stretch
+//     // dump_tree(tree);
+//     //
+//     // remove_val(-20, &tree); // delete node with 1 child
+//     // dump_tree(tree);
+//     return 1;
+// }

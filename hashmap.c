@@ -29,61 +29,56 @@ float current_load_factor(HMap *db){
     return (float) db->entries / (float) db->newer->total_size;
 }
 
-void scan_tab(HTab *db){
+void scan_tab(HTab *db, void (*print_val)(HNode*)){
     for (int i = 0; i < db->total_size; i++) {
         HNode *n = db->nodes[i];
         printf("Tab (%i) %p\n", i, n);
         while (n != NULL) {
-            Entry *entry = hnode_to_entry(n);
-            printf("> %s, %s\n", entry->key, entry->value);
+            print_val(n);
             n = n->next;
         }
     }
 }
 
-void scan_map(HMap *HashDB){
-    scan_tab(HashDB->newer);
+void scan_map(HMap *HashDB, void (*print_val)(HNode*)){
+    scan_tab(HashDB->newer, print_val);
     if (HashDB->older) {
         printf("> older table:\n");
-        scan_tab(HashDB->older);
+        scan_tab(HashDB->older, print_val);
     }
 }
 
-int trigger_resize(HMap *HashDB){
-    printf("triggering resize\n");
-    HashDB->older = HashDB->newer;
-    HashDB->newer = calloc(1, sizeof(HTab));
-    init_HTab(HashDB->newer, HashDB->older->total_size * 2);
-    return 1;
+void possibly_resize(HMap *map){
+    float load_factor = current_load_factor(map);
+    map->newer->load_factor = load_factor;
+    if (load_factor > MAX_LOAD_FACTOR) {
+        map->older = map->newer;
+        map->newer = calloc(1, sizeof(HTab));
+        init_HTab(map->newer, map->older->total_size * 2);
+    }
 }
 
-HNode *htab_lookup(HTab *db, const char *key, uint64_t hash){
-    if (hash == 0) {
-        hash = str_hash((uint8_t*)key, strlen(key));
-    }
+HNode *htab_lookup(HTab *db, const char *key, bool (*eq)(const char*, HNode*)){
+    uint64_t hash = str_hash((uint8_t*)key, strlen(key));
     uint32_t tab = hash & db->mask;
     HNode *n = db->nodes[tab];
     if (n == NULL) {
         return NULL;
-    }
+    };
     while (n != NULL) {
-        Entry *e = hnode_to_entry(n); 
-        if (n->hash == hash && strcmp(e->key, key) == 0) {
+        if (n->hash == hash && eq(key, n)) {
             return n;
         }
         n = n->next;
-    }
+    };
     return NULL;
 }
 
-HNode *h_lookup(HMap *HashDB, const char *key, uint64_t hash){
+HNode *h_lookup(HMap *HashDB, const char *key, bool (*eq) (const char*, HNode*)){
     HTab *db = HashDB->newer;
-    if (!hash) {
-        hash = str_hash((uint8_t*)key, strlen(key));
-    }
-    HNode *n = htab_lookup(db, key, hash);
+    HNode *n = htab_lookup(db, key, eq);
     if ( n == NULL && HashDB->older) {
-        n = htab_lookup(HashDB->older, key, hash);
+        n = htab_lookup(HashDB->older, key, eq);
     }
     return n;
 }
@@ -162,7 +157,7 @@ void h_rehash(HMap *HashDB){
             continue;
         }
         detach_node(n, old_db);
-        insert_entry(n, HashDB);
+        insert_node(n, HashDB);
         HashDB->older->size--;
         work++;
     }

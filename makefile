@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -O2
 
 TARGETS = server client
 
-SERVER_SRC = server.c hashmap.c
+SERVER_SRC = server.c hashmap.c avl.c zset.c
 CLIENT_SRC = client.c
 
 .PHONY: all clean
@@ -11,7 +11,7 @@ CLIENT_SRC = client.c
 all: $(TARGETS)
 
 server: $(SERVER_SRC)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -ggdb
 
 client: $(CLIENT_SRC)
 	$(CC) $(CFLAGS) -o $@ $^
