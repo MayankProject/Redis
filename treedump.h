@@ -42,11 +42,14 @@ static inline void dump_tree(const AvlNode *root)
         puts("(empty)");
         return;
     }
+
+    printf("---------------------------\n");
     _scan_tree(root->right, "", 0);
     // sleep(2);
     printf("(%s,%f)(%i)(%i)\n", avlNode_to_znode(root)->name,root->data, root->height, root->subnodes);          /* root itself */
            
     _scan_tree(root->left,  "", 1);
+    printf("---------------------------\n");
 }
 
 #endif 

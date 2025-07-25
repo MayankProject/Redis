@@ -41,11 +41,13 @@ void scan_tab(HTab *db, void (*print_val)(HNode*)){
 }
 
 void scan_map(HMap *HashDB, void (*print_val)(HNode*)){
+    printf("---------------------------\n");
     scan_tab(HashDB->newer, print_val);
     if (HashDB->older) {
         printf("> older table:\n");
         scan_tab(HashDB->older, print_val);
     }
+    printf("---------------------------\n");
 }
 
 void possibly_resize(HMap *map){

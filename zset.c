@@ -46,7 +46,6 @@ ZNode *add_zset(zset *Set, char *name, double score){
     }
     // for hashtable
     insert_node(&znode->node, Set->map);
-    scan_map(Set->map, print_val_znode);
     possibly_resize(Set->map);
     Set->map->entries++;
     AvlNode *iter = &znode->tree_node;
@@ -54,7 +53,10 @@ ZNode *add_zset(zset *Set, char *name, double score){
         balance(iter, &Set->root);
         iter = iter->parent;
     }
+    printf("---------------------------\n");
+    scan_map(Set->map, print_val_znode);
     dump_tree(Set->root);
+    printf("---------------------------\n");
     return znode;
 }
 

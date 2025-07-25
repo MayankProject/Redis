@@ -35,7 +35,6 @@ int updateNode(AvlNode *node){
 int attach_avl_node(AvlNode *node, AvlNode *tree){
     node->parent = tree;
     int cmp = compareZnodes(tree, node);
-    printf("cmp: %i\n", cmp);
     if(cmp < 0){
         tree->right = node;
     }
@@ -180,7 +179,6 @@ AvlNode *balance(AvlNode *node, AvlNode **root){
 }
 int insert_avl_node(AvlNode *node, AvlNode *tree){
     int cmp = compareZnodes(tree, node);
-    printf("cmp: %i\n", cmp);
     if(cmp < 0){
         if (tree->right){
             return insert_avl_node(node, tree->right);
@@ -237,140 +235,3 @@ AvlNode *init_tree_node(const int val){
     return node;
 }
 
-AvlNode *insert_val(int val, AvlNode **tree){
-    AvlNode *node;
-    node = init_tree_node(val);
-    insert_avl_node(node, *tree);
-    AvlNode *iter = node;
-    dump_tree(*tree);
-    while(iter){
-        balance(iter, tree);
-        iter = iter->parent;
-    }
-    return node;
-}
-
-// int remove_val(int val, AvlNode **tree){
-//     AvlNode *node = lookup(val, *tree);
-//     if(!node) return 0;
-//     AvlNode *parent = node->parent;
-//     detatch_avl_node(node);
-//     while(parent){
-//         balance(parent, tree);
-//         parent = parent->parent;
-//     }
-//     return 1;
-// }
-// int main(){
-//     AvlNode *tree = init_tree_node(20);
-//     insert_val(18, &tree);
-//     dump_tree(tree);
-//
-//     insert_val(5, &tree);       // no rotation
-//     dump_tree(tree);
-//
-//     insert_val(14, &tree);       // causes LR at 10
-//     dump_tree(tree);
-//
-//     insert_val(4, &tree);       // no rotation
-//     dump_tree(tree);
-//
-//     insert_val(10, &tree);       // no rotation
-//     dump_tree(tree);
-//
-//     insert_val(8, &tree);       // no rotation
-//     dump_tree(tree);
-//
-//     insert_val(9, &tree);       // no rotation
-//     dump_tree(tree);
-//     // insert_val(7, &tree);       // RR at 5 or minor balance
-//     // dump_tree(tree);
-//     //
-//     // insert_val(-20, &tree);     // left-heavy deep
-//     // dump_tree(tree);
-//     //
-//     // insert_val(15, &tree);      // right child of 10
-//     // dump_tree(tree);
-//     //
-//     // insert_val(20, &tree);      // RR at 15
-//     // dump_tree(tree);
-//     //
-//     // insert_val(25, &tree);      // RR at 20
-//     // dump_tree(tree);
-//     //
-//     // insert_val(13, &tree);      // LR at 15
-//     // dump_tree(tree);
-//     //
-//     // insert_val(100, &tree);     // triggers balancing at upper levels
-//     // dump_tree(tree);
-//     //
-//     // insert_val(35, &tree);      // causes rebalancing
-//     // dump_tree(tree);
-//     //
-//     // insert_val(12, &tree);      // fits on left of 13
-//     // dump_tree(tree);
-//     //
-//     // insert_val(24, &tree);      // causes LR at 25
-//     // dump_tree(tree);
-//     //
-//     // insert_val(8, &tree);       // right child of 7
-//     // dump_tree(tree);
-//     //
-//     // insert_val(9, &tree);       // causes RL at 7
-//     // dump_tree(tree);
-//     //
-//     // insert_val(11, &tree);      // triggers deeper rebalancing
-//     // dump_tree(tree);
-//     //
-//     // insert_val(1, &tree);       // left-deep insert
-//     // dump_tree(tree);
-//     //
-//     // insert_val(0, &tree);       // further left, may rebalance
-//     // dump_tree(tree);
-//     //
-//     // insert_val(3, &tree);       // LR at 4 possibly
-//     // dump_tree(tree);
-//     //
-//     // insert_val(2, &tree);       // continues left-side stress
-//     // dump_tree(tree);
-//     //
-//     // insert_val(-5, &tree);      // edge insert
-//     // dump_tree(tree);
-//     //
-//     // insert_val(14, &tree);      // completes 12-13-14 chain
-//     // dump_tree(tree);
-//     //
-//     // insert_val(17, &tree);      // in right middle
-//     // dump_tree(tree);
-//     // //
-//     // insert_val(16, &tree);      // fills near 17
-//     // dump_tree(tree);
-//     // //
-//     // insert_val(18, &tree);      // RR at 17?
-//     // dump_tree(tree);
-//     //
-//     // insert_val(26, &tree);      // fills 24-25-26
-//     // dump_tree(tree);
-//     //
-//     // insert_val(27, &tree);      // causes RR at 26
-//     // dump_tree(tree);
-//     //
-//     // insert_val(23, &tree);      // causes LR at 24
-//     // dump_tree(tree);
-//     //
-//     // insert_val(19, &tree);      // right side stress
-//     // dump_tree(tree);
-//     //
-//     // insert_val(21, &tree);      // right mid-depth insert
-//     // dump_tree(tree);
-//     //
-//     // insert_val(40, &tree);      // goes far right
-//     // dump_tree(tree);
-//     //
-//     // insert_val(42, &tree);      // right-right stretch
-//     // dump_tree(tree);
-//     //
-//     // remove_val(-20, &tree); // delete node with 1 child
-//     // dump_tree(tree);
-//     return 1;
-// }
