@@ -30,7 +30,6 @@ typedef struct HMap {
     int migrate_cursor;
 } HMap;
 
-
 // Initializes a new hashmap of two tables
 HMap *init_hashmap();
 

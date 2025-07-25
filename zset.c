@@ -18,6 +18,15 @@ void print_val_znode(HNode* n){
     printf("> %s, %f\n", entry->name, entry->score);
 }
 
+int compareZnodes(AvlNode *n1, AvlNode *n2){
+    if(n1->data == n2->data){
+        ZNode *z_n1 = avlNode_to_znode(n1);
+        ZNode *z_n2 = avlNode_to_znode(n2);
+        return strcmp(z_n1->name, z_n2->name);
+    }
+    return n1->data - n2->data;
+}
+
 ZNode *add_zset(zset *Set, char *name, double score){
     ZNode *znode = malloc(sizeof(ZNode));
     znode->name = strdup(name);
@@ -90,5 +99,5 @@ int remove_zset(zset *Set, char* name){
 int lookup_zset_rank(zset *Set, char *name){
     ZNode *n = lookup_zset(*Set, name);
     if(!n) return -1;
-    return find_rank(n->score, Set->root);
+    return find_rank(&n->tree_node, Set->root);
 }

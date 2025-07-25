@@ -200,7 +200,6 @@ int Z_add(char* params[4]){
     if(!new_ZNode){
         return 0;
     }
-    if(entry->set.root) dump_tree(entry->set.root);
     printf("%s: %f\n", new_ZNode->name, new_ZNode->score);
     return 1;
 };
@@ -231,7 +230,6 @@ int Z_rem(char *key, char *name){
         return -1;
     }
     int ret = remove_zset(&ent->set, name);
-    if(ent->set.root) dump_tree(ent->set.root);
     return ret;
 }
 

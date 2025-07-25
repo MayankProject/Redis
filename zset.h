@@ -22,3 +22,4 @@ ZNode *add_zset(zset *Set, char *name, double score);
 ZNode *lookup_zset(zset Set, char *name);
 int remove_zset(zset *Set, char* name);
 int lookup_zset_rank(zset *Set, char *name);
+int compareZnodes(AvlNode *n1, AvlNode *n2);

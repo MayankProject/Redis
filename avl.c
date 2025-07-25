@@ -1,6 +1,7 @@
 #include "avl.h"
 #include "treedump.h"
 #include "common.h"
+#include "zset.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -33,10 +34,12 @@ int updateNode(AvlNode *node){
 }
 int attach_avl_node(AvlNode *node, AvlNode *tree){
     node->parent = tree;
-    if(tree->data < node->data){
+    int cmp = compareZnodes(tree, node);
+    printf("cmp: %i\n", cmp);
+    if(cmp < 0){
         tree->right = node;
     }
-    else if (node->data < tree->data){
+    else if (cmp > 0){
         tree->left = node;
     };
     while(node->parent){
@@ -176,14 +179,16 @@ AvlNode *balance(AvlNode *node, AvlNode **root){
     return node;
 }
 int insert_avl_node(AvlNode *node, AvlNode *tree){
-    if(tree->data < node->data){
+    int cmp = compareZnodes(tree, node);
+    printf("cmp: %i\n", cmp);
+    if(cmp < 0){
         if (tree->right){
             return insert_avl_node(node, tree->right);
         }
         attach_avl_node(node, tree);
         return 1;
     }
-    else if (node->data < tree->data ){
+    else if (cmp > 0){
         if (tree->left){
             return insert_avl_node(node, tree->left);
         }
@@ -197,18 +202,19 @@ int insert_avl_node(AvlNode *node, AvlNode *tree){
     return 1;
 }
 
-int find_rank(double val, AvlNode *root){
+int find_rank(AvlNode *node, AvlNode *root){
     int rank = root->left ? root->left->subnodes + 1: 0;
     if(root->parent){
         printf("expected root!\n");
     };
     while (true){
-        if (root->data < val){
+        int cmp = compareZnodes(root, node);
+        if (cmp < 0){
             if(!root->right) break;
             root = root->right;
             rank += (root->left ? root->left->subnodes + 1: 0) + 1;
         }
-        else if (root->data > val){
+        else if (cmp > 0){
             if(!root->left) break;
             root = root->left;
             rank -= (root->right ? root->right->subnodes + 1: 0) + 1;
