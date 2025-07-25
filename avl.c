@@ -238,7 +238,6 @@ AvlNode *insert_val(int val, AvlNode **tree){
     AvlNode *iter = node;
     dump_tree(*tree);
     while(iter){
-        printf("at: %f\n", iter->data);
         balance(iter, tree);
         iter = iter->parent;
     }

@@ -219,7 +219,7 @@ static size_t build_sample_batch(Request *batch[MAX_BATCH])
         {4, {"zadd", "leaderboard", "leo", "19"}},
         {3, {"zrem", "leaderboard", "ansh"}},
         {3, {"zrem", "leaderboard", "nina"}},
-        {3, {"zscore", "leaderboard", "mayank"}},
+        {3, {"zscore", "leaderboard", "jdksaksadlj"}},
         {2, {"get", "mayank"}},
     };
 

@@ -231,7 +231,6 @@ int Z_rem(char *key, char *name){
         return -1;
     }
     int ret = remove_zset(&ent->set, name);
-    // printf("root: %f\n", ent->set.root->right->left->data);
     if(ent->set.root) dump_tree(ent->set.root);
     return ret;
 }
@@ -402,7 +401,7 @@ int perform_request(int params_len, char **params, Response *response){
     }
     else if ( params_len == 2 && strcmp(params[0], "get") == 0) {
         char *val = get_kv(params[1]);
-        if (val != NULL) {
+        if (val) {
             response->status = RES_OK;
             out_str(val, strlen(val), response);
             return 1;
@@ -424,9 +423,6 @@ int perform_request(int params_len, char **params, Response *response){
     }
     else if ( params_len == 1 && strcmp(params[0], "keys") == 0){
         char **keys = all_keys(State.HashDB);
-        for(int x = 0; x < State.HashDB->entries; x++){
-            printf("key: %s\n", keys[x]);
-        }
         out_arr(keys, State.HashDB->entries, response); 
         response->status = RES_OK;
         return 1;
@@ -443,14 +439,13 @@ int perform_request(int params_len, char **params, Response *response){
     }
     else if ( params_len == 3 && strcmp(params[0], "zscore") == 0){
         double score = Z_score(params[1], params[2]);
-        printf("score: %f\n", score);
         if (score != -1){
             response->status = RES_OK;
             out_double(score, response);
             return 1;
         }
         response->status = RES_ERROR;
-        char *err = "Something went wrong";
+        char *err = "KEY_NOT_FOUND";
         out_str(err, strlen(err), response);
         return 1;
     }
@@ -461,13 +456,12 @@ int perform_request(int params_len, char **params, Response *response){
             return 1;
         }
         response->status = RES_ERROR;
-        char *err = "Something went wrong";
+        char *err = "KEY_NOT_FOUND";
         out_str(err, strlen(err), response);
         return 1;
     }
     else if ( params_len == 3 && strcmp(params[0], "zrank") == 0){
         double rank = Z_rank(params[1], params[2]);
-        printf("rank: %f\n", rank);
         out_double(*((double*) &rank), response);
         return 1;
     }

@@ -69,7 +69,6 @@ int remove_zset(zset *Set, char* name){
     }
     ZNode *e = hnode_to_znode(n);
     AvlNode *parent = e->tree_node.parent;
-    printf("data: %f\n", e->score);
     detach_node(n, table);
     Set->map->entries--;
 
