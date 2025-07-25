@@ -125,7 +125,6 @@ int read_full(int client_fd, Response *response) {
     // TOTAL RES LEN
     ret = read_n_bytes(client_fd, &res_len, sizeof(uint32_t));
     if( ret == -1 ) die("read_n_bytes");
-    printf("res_len: %i\n", res_len);
 
     if(res_len > MAXLEN) {
         die("Response too long\n");
@@ -134,7 +133,6 @@ int read_full(int client_fd, Response *response) {
     // STATUS
     read_n_bytes(client_fd, &response->Status, sizeof(uint32_t));
     read_n_bytes(client_fd, &response->Tag, sizeof(uint8_t));
-    printf("tag: %i\n", response->Tag);
     read_by_tag(client_fd, response);
     return 0;
 }
@@ -142,11 +140,12 @@ int read_full(int client_fd, Response *response) {
 void output_response(Response *response){
     switch (response->Tag) {
         case TAG_STR:{
-            printf("element: %s\n", response->str.val);
+            printf("> %s\n", response->str.val);
             return;
         };
         case TAG_ARR: {
             for(uint32_t x = 0; x < response->arr.len; x++){
+                printf("(%i) ", x+1);
                 output_response(response->arr.val[x]);
             }
             return;
@@ -154,7 +153,7 @@ void output_response(Response *response){
         case TAG_DOUBLE: {
             double val;
             memcpy(&val, &response->double_num, sizeof(val));
-            printf("element: %f\n", val);
+            printf("> %f\n", val);
             return;
         }
     }
@@ -208,28 +207,16 @@ static size_t build_sample_batch(Request *batch[MAX_BATCH])
         char *argv[6];
     } script[] = {
         {3, {"set", "mayank", "8"}},
-
         {4, {"zadd", "leaderboard", "ansh", "8"}},
         {4, {"zadd", "leaderboard", "bravo", "8"}},
         {4, {"zadd", "leaderboard", "charlie", "8"}},
-        {4, {"zadd", "leaderboard", "delta", "8"}},
         {4, {"zadd", "leaderboard", "mayank", "6"}},
         {3, {"zrank", "leaderboard", "ansh"}},
         {3, {"zrank", "leaderboard", "bravo"}},
         {3, {"zrank", "leaderboard", "charlie"}},
         {3, {"zrank", "leaderboard", "delta"}},
         {3, {"zrank", "leaderboard", "mayank"}},
-        // {4, {"zadd", "leaderboard", "kyle", "1"}},
-        // {4, {"zadd", "leaderboard", "sam", "3"}},
-        // {4, {"zadd", "leaderboard", "lara", "17"}},
-        // {4, {"zadd", "leaderboard", "nina", "14"}},
-        // {4, {"zadd", "leaderboard", "zara", "18"}},
-        // {4, {"zadd", "leaderboard", "aaron", "4"}},
-        // {4, {"zadd", "leaderboard", "leo", "19"}},
-        // {3, {"zrem", "leaderboard", "ansh"}},
-        // {3, {"zrem", "leaderboard", "nina"}},
-        // {3, {"zscore", "leaderboard", "jdksaksadlj"}},
-        // {2, {"get", "mayank"}},
+        {2, {"get", "mayank"}},
     };
 
     size_t nreq = sizeof script / sizeof script[0];
@@ -267,13 +254,50 @@ int main() {
     ret = connect(sockfd, (struct sockaddr *) &addr, sizeof(addr));
     if( ret == -1 ) die("connect");
 
-    Request *batch_requests[MAX_BATCH];
 
-    size_t count = build_sample_batch(batch_requests);
-    dump_batch(batch_requests, count);
+    // FOR TESTING 
+    
+    // Request *batch_requests[MAX_BATCH];
+    //
+    // size_t count = build_sample_batch(batch_requests);
+    // dump_batch(batch_requests, count);
+    //
+    // for (int x = 0; x < count; x++){
+    //     struct Request *request = batch_requests[x];
+    //     if(!request){
+    //         continue;
+    //     }
+    //     char* response;
+    //     int res_len = 0;
+    //     response = malloc(1024);
+    //     make_request(request->params, request->len, response, &res_len);
+    //     write_full(sockfd, response, res_len);
+    // }
 
-    for (int x = 0; x < count; x++){
-        struct Request *request = batch_requests[x];
+    pthread_t thread;
+    pthread_create(&thread, NULL, handle_read_thread, &sockfd);  
+    while(1){
+        char r_args[1024];
+        fgets(r_args, 1024, stdin);
+        r_args[strcspn(r_args, "\n")] = '\0';
+        char *token = strtok(r_args, " ");
+        char* args[6];
+        int count = 0;
+        int invalid = 0;
+        while (token != NULL) {
+            if(count >= 6){
+                printf("CAN'T ENTER MORE THAN 6 ARGS\n");
+                invalid = 1;
+                break;
+            }
+            args[count] = token;
+            token = strtok(NULL, " ");
+            count++;
+        }
+        if (invalid){
+            continue;
+        }
+        Request *request = gen_request(count, args);
         if(!request){
             continue;
         }
@@ -282,11 +306,6 @@ int main() {
         response = malloc(1024);
         make_request(request->params, request->len, response, &res_len);
         write_full(sockfd, response, res_len);
-    }
-
-    pthread_t thread;
-    pthread_create(&thread, NULL, handle_read_thread, &sockfd);  
-    while(1){
-        sleep(1);
+        free(response);
     }
 }

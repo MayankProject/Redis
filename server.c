@@ -47,7 +47,8 @@ typedef struct serverState{
 
 typedef enum Response_status {
     RES_OK = 0,
-    RES_ERROR
+    RES_ERROR,
+    RES_UNKNOWN_COMMAND,
 } Response_status;
 
 typedef enum Tag {
@@ -86,8 +87,8 @@ char *response_enum(int status){
         case RES_OK:
             return "OK";
         case RES_ERROR:
-            return "ERROR";
-        default:
+            return "SOMETHING WENT WRONG";
+        case RES_UNKNOWN_COMMAND: 
             return "UNKNOWN/INVALID COMMAND";
     }
 }
@@ -463,7 +464,7 @@ int perform_request(int params_len, char **params, Response *response){
         out_double(*((double*) &rank), response);
         return 1;
     }
-    response->status = RES_ERROR;
+    response->status = RES_UNKNOWN_COMMAND;
     return 0;
 }
 
