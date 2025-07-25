@@ -1,10 +1,10 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2
+CFLAGS = -Wall -Wextra -O2 -Iinclude
 
 TARGETS = server client
 
-SERVER_SRC = server.c hashmap.c avl.c zset.c
-CLIENT_SRC = client.c
+SERVER_SRC = src/server.c src/hashmap.c src/avl.c src/zset.c
+CLIENT_SRC = src/client.c
 
 .PHONY: all clean
 

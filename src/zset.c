@@ -1,8 +1,8 @@
-#include "zset.h"
-#include "treedump.h"
-#include "avl.h"
-#include "common.h"
-#include "hashmap.h"
+#include "../include/zset.h"
+#include "../include/treedump.h"
+#include "../include/avl.h"
+#include "../include/common.h"
+#include "../include/hashmap.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>

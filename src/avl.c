@@ -1,7 +1,6 @@
-#include "avl.h"
-#include "treedump.h"
-#include "common.h"
-#include "zset.h"
+#include "../include/avl.h"
+#include "../include/treedump.h"
+#include "../include/zset.h"
 #include <stdio.h>
 #include <stdlib.h>
 

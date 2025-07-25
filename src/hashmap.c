@@ -1,6 +1,6 @@
-#include "hashmap.h"
-#include "common.h"
-#include "server.h"
+#include "../include/hashmap.h"
+#include "../include/common.h"
+#include "../include/server.h"
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>

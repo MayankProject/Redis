@@ -1,8 +1,8 @@
-#include "zset.h"
-#include "treedump.h"
-#include "server.h"
-#include "common.h"
-#include "hashmap.h"
+#include "../include/zset.h"
+#include "../include/treedump.h"
+#include "../include/server.h"
+#include "../include/common.h"
+#include "../include/hashmap.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
